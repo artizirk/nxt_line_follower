@@ -1,0 +1,121 @@
+// Line follower
+// PID controller algoritmiga Not eXactly C keeles
+//
+// Algoritm ise sai pms porditud ühest bascom-avr koodi jupist (http://goo.gl/3wMzt)
+//
+// TODO
+// 1. panna kaks aju omavahel serial ühendusega kokku ja tänu sellele võtta kasutusele 5 andurit
+// 2. kiiruse muutmine vastavalt kui palju pöörama peab ja et sirge peal sõidaks 100ga edasi :D
+//
+// Arti Zirk 11.05.2012
+//
+
+int light1, light2, light3; //valgusandurite loetud väärtused
+int line = 50; //piir musta ja valge vahel (0-100 vahemikus)
+int Speed = 50; // kui  kiirelt sõidame
+
+// nüüd siis igast PID muutujad (mul pole õrna aimugi mida need teevad)
+long Diff, Difflast = 0;
+float Prop;
+float Integral;
+float Deriv;
+float Rate;
+float Control; // arv mis tuleb lõpuks tehtest välja
+long Mpos; //praegune postistioon joone peal
+
+//nende muutujatega saab vist midagi tuunida (wikipedia lehel on rohkem kirjas)
+float Kp = 4.0; 
+float Kd = 0.4;
+float Ki = 0.18;
+
+int Tpos = 0; //keskpunkt 
+int Upperlimit = 50; // üle nende kahe väärtuse ei tohiks pöörde punkt minna
+int Lowerlimit = -50;
+
+
+
+sub setup() //sea tööle kõik sensorid
+{
+	SetSensorTouch(IN_1); //puute andur stardi andmiseks
+	SetSensorLight(IN_2);
+	SetSensorLight(IN_3); 
+	SetSensorLight(IN_4); 
+}
+
+sub read_sensors() // Loe andurite väärtusi
+{
+	light1 = Sensor(IN_4);
+	light2 = Sensor(IN_3);
+	light3 = Sensor(IN_2);
+
+	if (light1 < line & light2 > line & light3 > line) //100
+	{
+		Mpos = 2;
+	}
+	else if (light1 < line & light2 < line & light3 > line) //110
+	{
+		Mpos = 1;
+	}
+	else if (light2 < line & light1 > line & light3 > line) //010 oleme keskel
+	{
+		Mpos = 0;
+	}
+	else if (light3 < line & light2 < line & light1 > line) //011
+	{
+		Mpos = -1;
+	}
+	else if (light3 < line & light1 > line & light2 > line) //001
+	{
+		Mpos = -2;
+	}
+	else if (light1 > line & light2 > line & light3 > line) //000 rada kadus ära 
+	{
+		if (Mpos < 0) { Mpos = -3; } else { Mpos = 3; }
+	}
+	//Mpos = -Mpos; // kuna muidu pöörab robot valele poole
+	
+	//debug stuff, numbrid väljastatakse ekraanile
+	NumOut(0, LCD_LINE1, 0000);
+	NumOut(0, LCD_LINE2, 0000);
+	NumOut(0, LCD_LINE3, 0000);
+	NumOut(0, LCD_LINE4, 0000);
+	NumOut(0, LCD_LINE1, light1);
+	NumOut(0, LCD_LINE2, light2);
+	NumOut(0, LCD_LINE3, light3);
+	NumOut(0, LCD_LINE4, Mpos);
+}
+
+sub move() //siin on kõik mate mis paneb roboti liikuma
+{			//(sammuti pole mul õrna aimugi kuidas see töötab :D)
+	Diff = Tpos - Mpos;
+	Prop = Diff * Kd;
+	
+	Integral = Integral + Diff;
+	Integral = Integral * Ki;
+
+	Rate = Diff - Difflast;
+	Deriv = Rate * Kd;
+
+	Difflast = Diff;
+
+	Control = Prop + Deriv;
+	Control = Control + Integral;
+	Control = Control * 14; // kuna pöörde punkt tahab arve vahemikus 100 kuni -100
+
+	if (Control > Upperlimit) { Control = Upperlimit; }
+	if (Control < Lowerlimit) { Control = Lowerlimit; }
+	
+	NumOut(67, LCD_LINE1, Control); // debug stuff
+	OnFwdSync(OUT_BC, Speed, Control); //sõidame siis 
+}
+
+task main()
+{
+	setup();
+	//Precedes(move, read_sensors); //multitasking on väga väga paha mõte !!!
+	while(true)
+	{
+		read_sensors();
+		move();
+	}
+}
